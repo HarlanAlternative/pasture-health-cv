@@ -1,0 +1,34 @@
+[project]
+name = "pasture-health-cv"
+version = "0.1.0"
+description = "Pasture/crop health segmentation from Sentinel-2 imagery — NZ agritech"
+requires-python = ">=3.11"
+dependencies = [
+    "sentinelhub>=3.10",
+    "rasterio>=1.3",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "jupyter>=1.0",
+    "ipykernel>=6.0",
+    "python-dotenv>=1.0",
+    "geopandas>=0.14",
+    "pyogrio>=0.7",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pasture"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
