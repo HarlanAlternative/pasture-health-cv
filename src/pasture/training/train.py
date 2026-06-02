@@ -23,7 +23,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from pasture.data.dataset import PastureDataset
-from pasture.models.unet import build_unet
+from pasture.models.factory import build_model, count_parameters
 from pasture.training.metrics import compute_miou, compute_per_class_iou
 
 try:
@@ -90,14 +90,16 @@ def validate(
 
 
 def train(
-    encoder: str = "resnet50",
+    arch: str = "unet",
+    encoder: str | None = None,
     epochs: int = 30,
     batch_size: int = 16,
     lr: float = 1e-4,
     patch_dir: str = "data/patches",
     ckpt_dir: str = "data/checkpoints",
     num_classes: int = 5,
-) -> None:
+) -> dict:
+    """Train one model config; returns result dict for ablation table."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
@@ -109,20 +111,25 @@ def train(
                               num_workers=4, pin_memory=True)
     print(f"Train patches: {len(train_ds)}  Val patches: {len(val_ds)}")
 
-    model = build_unet(encoder=encoder, in_channels=4, num_classes=num_classes).to(device)
+    model = build_model(arch=arch, encoder=encoder, in_channels=4, num_classes=num_classes).to(device)
+    n_params = count_parameters(model)
+    print(f"Model: {arch}/{encoder or 'default'}  Params: {n_params/1e6:.1f}M")
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     ce_criterion = nn.CrossEntropyLoss(ignore_index=0)
 
     Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
-    best_miou = 0.0
-    best_ckpt = Path(ckpt_dir) / "best.pt"
+    best_miou  = 0.0
+    best_epoch = 0
+    best_ckpt  = Path(ckpt_dir) / f"best_{arch}.pt"
 
-    mlflow.set_experiment("pasture-health-unet")
-    with mlflow.start_run(run_name=f"unet-{encoder}"):
+    mlflow.set_experiment("pasture-health-ablation")
+    run_name = f"{arch}-{encoder or 'default'}"
+    with mlflow.start_run(run_name=run_name):
         mlflow.log_params({
-            "encoder": encoder, "epochs": epochs, "batch_size": batch_size,
-            "lr": lr, "num_classes": num_classes,
+            "arch": arch, "encoder": encoder, "epochs": epochs,
+            "batch_size": batch_size, "lr": lr, "num_classes": num_classes,
+            "params_M": round(n_params / 1e6, 2),
             "train_patches": len(train_ds), "val_patches": len(val_ds),
         })
 
@@ -141,9 +148,10 @@ def train(
 
             flag = ""
             if miou > best_miou:
-                best_miou = miou
+                best_miou  = miou
+                best_epoch = epoch
                 torch.save({"epoch": epoch, "model": model.state_dict(),
-                            "miou": miou, "encoder": encoder}, best_ckpt)
+                            "miou": miou, "arch": arch, "encoder": encoder}, best_ckpt)
                 flag = "  ← best"
 
             print(
@@ -155,10 +163,19 @@ def train(
         mlflow.log_artifact(str(best_ckpt))
         print(f"\nBest mIoU: {best_miou:.4f}  checkpoint: {best_ckpt}")
 
+    return {
+        "arch": arch,
+        "encoder": encoder,
+        "params_M": round(n_params / 1e6, 2),
+        "best_miou": round(best_miou, 4),
+        "best_epoch": best_epoch if "best_epoch" in dir() else epochs,
+    }
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--encoder",    default="resnet50")
+    parser.add_argument("--arch",       default="unet")
+    parser.add_argument("--encoder",    default=None)
     parser.add_argument("--epochs",     type=int,   default=30)
     parser.add_argument("--batch-size", type=int,   default=16)
     parser.add_argument("--lr",         type=float, default=1e-4)
@@ -166,6 +183,7 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt-dir",   default="data/checkpoints")
     args = parser.parse_args()
     train(
-        encoder=args.encoder, epochs=args.epochs, batch_size=args.batch_size,
-        lr=args.lr, patch_dir=args.patch_dir, ckpt_dir=args.ckpt_dir,
+        arch=args.arch, encoder=args.encoder, epochs=args.epochs,
+        batch_size=args.batch_size, lr=args.lr,
+        patch_dir=args.patch_dir, ckpt_dir=args.ckpt_dir,
     )
