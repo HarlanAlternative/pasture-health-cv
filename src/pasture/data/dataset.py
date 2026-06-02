@@ -64,4 +64,4 @@ class PastureDataset(Dataset):
             mask  = result["mask"]
 
         image = _normalise(image)
-        return torch.from_numpy(image), torch.from_numpy(mask)
+        return torch.from_numpy(image), torch.from_numpy(mask).long()
