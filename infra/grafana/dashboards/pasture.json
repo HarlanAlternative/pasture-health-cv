@@ -1,0 +1,45 @@
+{
+  "title": "Pasture Health CV",
+  "uid": "pasture-health",
+  "schemaVersion": 38,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1, "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "title": "Inference Latency (p50 / p95)",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(pasture_infer_latency_seconds_bucket[5m]))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, rate(pasture_infer_latency_seconds_bucket[5m]))", "legendFormat": "p95"}
+      ]
+    },
+    {
+      "id": 2, "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "title": "Requests / min",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "rate(pasture_requests_total[1m]) * 60", "legendFormat": "{{status}}"}
+      ]
+    },
+    {
+      "id": 3, "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "title": "Health Score (last inference)",
+      "type": "gauge",
+      "fieldConfig": {"defaults": {"min": 0, "max": 100, "unit": "percent",
+        "thresholds": {"steps": [
+          {"color": "red", "value": 0},
+          {"color": "yellow", "value": 40},
+          {"color": "green", "value": 70}
+        ]}}},
+      "targets": [{"expr": "pasture_health_score_last", "legendFormat": "Health Score"}]
+    },
+    {
+      "id": 4, "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "title": "NDVI Mean (last inference)",
+      "type": "timeseries",
+      "fieldConfig": {"defaults": {"min": -1, "max": 1}},
+      "targets": [{"expr": "pasture_ndvi_mean_last", "legendFormat": "NDVI mean"}]
+    }
+  ],
+  "time": {"from": "now-1h", "to": "now"}
+}

@@ -14,6 +14,14 @@ dependencies = [
     "geopandas>=0.14",
     "pyogrio>=0.7",
     "requests>=2.31",
+    # API
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "pandera>=0.19",
+    "prometheus-client>=0.20",
+    "pillow>=10.0",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
     # ML
     "torch>=2.6",
     "torchvision>=0.21",
