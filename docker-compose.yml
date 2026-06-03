@@ -14,13 +14,14 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # GPU: uncomment below if nvidia-container-toolkit is configured
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
   postgres:
     image: postgres:16-alpine
