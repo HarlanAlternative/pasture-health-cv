@@ -9,7 +9,7 @@ RUN uv sync --no-dev --frozen
 
 COPY src/ src/
 
-ENV CKPT_PATH=data/checkpoints/best_segformer.pt
+ENV CKPT_PATH=data/checkpoints/best_unet.pt
 ENV SENTINEL_CACHE=data/sentinel_cache
 ENV PYTHONUNBUFFERED=1
 

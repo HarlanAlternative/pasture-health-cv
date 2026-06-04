@@ -46,7 +46,7 @@ _drift = DriftDetector(window=10)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _predictor
-    ckpt_path = os.environ.get("CKPT_PATH", "data/checkpoints/best_segformer.pt")
+    ckpt_path = os.environ.get("CKPT_PATH", "data/checkpoints/best_unet.pt")
     cache_dir  = os.environ.get("SENTINEL_CACHE", "data/sentinel_cache")
     _predictor = Predictor(ckpt_path=ckpt_path, sentinel_cache=cache_dir)
     yield
