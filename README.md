@@ -59,28 +59,6 @@ Sentinel Hub API
 
 ---
 
-## Resume Bullets
-
-```
-Pasture Health Segmentation — Production CV Pipeline
-Sentinel-2 · PyTorch · SegFormer · FastAPI · MLflow · Prometheus · Grafana
-
-· Trained SegFormer-B0 on Sentinel-2 L2A multispectral tiles + NZ LRIS LCDB
-  weak labels for 4-class pasture segmentation; benchmarked 3 architectures
-  (U-Net / DeepLabV3+ / SegFormer-B0) — best val mIoU 0.60 at 3.7 M params
-  (9× fewer than U-Net baseline).
-
-· Production MLOps pipeline: FastAPI REST service with pandera I/O schema
-  validation, MLflow experiment tracking across all ablation runs, Docker Compose
-  full-stack deployment (API + PostgreSQL + Prometheus + Grafana).
-
-· Prometheus + Grafana observability: inference latency histogram (p50/p95),
-  rolling NDVI drift Z-score alerting vs training baseline, per-region health-score
-  time series — directly applicable to NZ precision dairy farming.
-```
-
----
-
 ## Quick Start
 
 **Prerequisites:** Python 3.11 · [uv](https://github.com/astral-sh/uv) · Docker Desktop

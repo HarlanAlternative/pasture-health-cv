@@ -10,3 +10,4 @@ dist/
 mlruns/
 mlflow.db
 logs/
+resume_bullets.md
