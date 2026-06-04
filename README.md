@@ -13,17 +13,18 @@
 
 ## Results
 
-### Architecture Ablation — 30 epochs, identical hyperparams
+### Architecture Ablation — 30 epochs, 4 AOIs, class-weighted loss
 
 | Model | Encoder | Params | Val mIoU |
 |:--|:--|--:|--:|
-| U-Net | ResNet-50 | 32.5 M | 0.568 |
-| DeepLabV3+ | EfficientNet-B3 | 11.7 M | 0.512 |
-| **SegFormer-B0** | **MiT-B0** | **3.7 M** | **0.600** |
+| **U-Net** ← best | **ResNet-50** | **32.5 M** | **0.582** |
+| SegFormer-B0 | MiT-B0 | 3.7 M | 0.576 |
+| DeepLabV3+ | EfficientNet-B3 | 11.7 M | 0.513 |
 
-SegFormer achieves the best mIoU with **9× fewer parameters** than the U-Net baseline.
+Per-class IoU (best model): `healthy 0.789 · stressed 0.507 · bare 0.541 · water 0.490`
 
-**Data:** Sentinel-2 L2A · Waikato + Canterbury · 4 seasons 2024 · 392 training patches
+**Data:** Sentinel-2 L2A · 4 NZ regions (Waikato, Canterbury, Hawke's Bay, Marlborough) ·
+4 seasons 2024 · 546 training patches · class-weighted CE + Dice loss
 **Labels:** LRIS LCDB v5.0 weak supervision → 4 classes: `healthy` · `stressed` · `bare` · `water`
 
 ---
@@ -34,27 +35,30 @@ SegFormer achieves the best mIoU with **9× fewer parameters** than the U-Net ba
 Sentinel Hub API
       │  Sentinel-2 L2A tile (4-band, 512×512)
       ▼
-┌─────────────────────────────────────────────┐
-│              FastAPI  /infer                │
-│                                             │
-│  pandera input validation                   │
-│       │                                     │
-│  SegFormer-B0 (GPU inference ~200 ms)       │
-│       │                                     │
-│  pandera output validation                  │
-│       │                                     │
-│  mask PNG · health score · NDVI stats       │
-└──────────────┬──────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│               FastAPI  /infer                   │
+│                                                 │
+│  pandera input validation                       │
+│       │                                         │
+│  U-Net / ResNet-50 (GPU inference ~200 ms)      │
+│       │                                         │
+│  pandera output validation                      │
+│       │                                         │
+│  mask PNG · health score · NDVI stats           │
+└──────────────┬──────────────────────────────────┘
                │
-       ┌───────┴────────┐
-       ▼                ▼
-  PostgreSQL         Prometheus
-  (history)     ┌────────┴────────┐
-                │    Grafana      │
-                │  health score   │
-                │  NDVI drift     │
-                │  latency p95    │
-                └─────────────────┘
+       ┌───────┴────────────────┐
+       ▼                        ▼
+  PostgreSQL              Seasonal Baseline
+  (history)               (3-yr climatology)
+                               │
+                    ┌──────────┴──────────┐
+                    ▼                     ▼
+               Prometheus            Prophet
+               seasonal Z-score      quarterly forecast
+               + latency alerts      /forecast endpoint
+                    │
+               Grafana (6 panels)
 ```
 
 ---
@@ -70,24 +74,30 @@ cd pasture-health-cv
 pip install uv && uv sync
 cp .env.example .env          # fill in credentials (see below)
 
-# 2. Fetch data + extract patches  (~5 min, API calls cached locally)
+# 2. Fetch satellite tiles + extract patches  (~5 min, cached locally)
 uv run python scripts/prepare_data.py
 
-# 3. Train all architectures
+# 3. Fetch 3-year NDVI history for seasonal baseline + Prophet
+uv run python scripts/fetch_historical.py
+
+# 4. Train all architectures (ablation)
 uv run python scripts/ablation.py --epochs 30
 uv run mlflow ui                # view runs at http://localhost:5000
 
-# 4. Start full stack
+# 5. Start full stack
 docker compose up
 
-# 5. Run inference
+# 6. Run inference
 curl -X POST http://localhost:8000/infer \
   -H "Content-Type: application/json" \
   -d '{"bbox": [175.2, -38.1, 175.7, -37.6],
        "date_from": "2024-01-01", "date_to": "2024-03-31"}'
+
+# 7. Get seasonal NDVI forecast
+curl "http://localhost:8000/forecast?aoi=waikato&quarters=4"
 ```
 
-**Example response:**
+**Inference response:**
 ```json
 {
   "health_score": 99.4,
@@ -98,16 +108,27 @@ curl -X POST http://localhost:8000/infer \
 }
 ```
 
+**Forecast response:**
+```json
+{
+  "aoi": "waikato",
+  "forecast": [
+    { "date": "2025-02-15", "yhat": 0.637, "yhat_lower": 0.613, "yhat_upper": 0.657 },
+    { "date": "2025-05-15", "yhat": 0.822, "yhat_lower": 0.800, "yhat_upper": 0.844 }
+  ]
+}
+```
+
 ---
 
 ## Services
 
 | Service | URL | Notes |
 |:--|:--|:--|
-| FastAPI | http://localhost:8000/docs | Interactive Swagger UI |
-| Prometheus | http://localhost:9090 | 4 alert rules configured |
-| Grafana | http://localhost:3000 | `admin` / `admin` |
-| PostgreSQL | localhost:5432 | Inference history + drift metrics |
+| FastAPI | http://localhost:8000/docs | Swagger UI — `/infer`, `/forecast`, `/drift` |
+| Prometheus | http://localhost:9090 | 4 alert rules (latency, health, drift, traffic) |
+| Grafana | http://localhost:3000 | `admin` / `admin` · 6-panel dashboard |
+| PostgreSQL | localhost:5432 | Inference history |
 
 ---
 
@@ -117,17 +138,19 @@ curl -X POST http://localhost:8000/infer \
 src/pasture/
 ├── data/        Sentinel-2 fetch · LRIS ingest · tiling · dataset
 ├── models/      U-Net · DeepLabV3+ · SegFormer factory
-├── training/    train loop · metrics · MLflow logging
+├── training/    train loop · class-weighted loss · MLflow logging
 ├── inference/   predictor · health score · NDVI stats
-├── api/         FastAPI · pandera schemas · PostgreSQL persistence
-└── monitoring/  Prometheus metrics · NDVI drift detector
+├── api/         FastAPI · pandera schemas · PostgreSQL · /forecast
+└── monitoring/  Prometheus metrics · seasonal drift detector · Prophet
 
 scripts/
-├── prepare_data.py   batch fetch 8 seasonal tiles + patch extraction
-└── ablation.py       3-architecture training study
+├── prepare_data.py      batch fetch 16 seasonal tiles (4 AOIs × 4 seasons)
+├── fetch_historical.py  pull 2022-2024 NDVI history for seasonal baseline
+├── ablation.py          3-architecture training study
+└── eval_metrics.py      per-class IoU evaluation
 
 infra/
-├── prometheus/   scrape config + 4 alerting rules
+├── prometheus/   scrape config + alerting rules
 ├── grafana/      6-panel dashboard + auto-provisioning
 └── postgres/     schema init SQL
 ```
