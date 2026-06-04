@@ -1,7 +1,7 @@
 # Pasture Health CV
 
-> Sentinel-2 multispectral segmentation pipeline for NZ pasture health monitoring —
-> production MLOps targeting agritech employers (Fonterra, LIC, Halter).
+> End-to-end semantic segmentation of NZ pasture and cropland health from
+> Sentinel-2 multispectral imagery, served as a production REST API with full MLOps observability.
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.11%2Bcu128-red?logo=pytorch)
