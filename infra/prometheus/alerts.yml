@@ -1,0 +1,39 @@
+groups:
+  - name: pasture-health
+    interval: 30s
+    rules:
+
+      - alert: HighInferenceLatency
+        expr: histogram_quantile(0.95, rate(pasture_infer_latency_seconds_bucket[5m])) > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 inference latency exceeds 5 s"
+          description: "Current p95={{ $value | humanizeDuration }}. Check Sentinel Hub API or model performance."
+
+      - alert: LowPastureHealthScore
+        expr: pasture_health_score_last < 40
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pasture health score critically low ({{ $value | printf \"%.1f\" }})"
+          description: "Health score below 40 for 5 min — possible drought or land-use change."
+
+      - alert: NDVIDriftDetected
+        expr: abs(pasture_ndvi_drift_zscore) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "NDVI distribution drift detected (z={{ $value | printf \"%.2f\" }})"
+          description: "Rolling NDVI mean has drifted >2σ from the training baseline (0.766). Possible seasonal shift or sensor anomaly."
+
+      - alert: NoInferenceRequests
+        expr: rate(pasture_requests_total[15m]) == 0
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "No inference requests in the last 15 minutes"

@@ -4,31 +4,42 @@ FastAPI inference service for pasture health detection.
 Endpoints:
     GET  /health          — liveness probe
     POST /infer           — Sentinel-2 tile → mask + health score + NDVI stats
+    GET  /drift           — current NDVI drift Z-score vs training baseline
     GET  /metrics         — Prometheus exposition
 
 Environment variables:
-    CKPT_PATH             — path to best_segformer.pt (default: data/checkpoints/best_segformer.pt)
-    SENTINEL_CACHE        — tile cache directory (default: data/sentinel_cache)
+    CKPT_PATH             — path to best_segformer.pt
+    SENTINEL_CACHE        — tile cache directory
+    DATABASE_URL          — PostgreSQL DSN (optional; disables persistence if unset/unreachable)
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
 
 import pandera.errors
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from pasture.api.db import save_inference
 from pasture.api.schemas import InferRequest, InferResponse, validate_prediction
 from pasture.inference.predictor import Predictor
+from pasture.monitoring.drift import DriftDetector
 from pasture.monitoring.metrics import (
-    health_score_gauge, infer_latency, ndvi_mean_gauge, requests_total,
+    health_score_gauge,
+    infer_latency,
+    ndvi_mean_gauge,
+    requests_total,
 )
 
+log = logging.getLogger(__name__)
+
 _predictor: Predictor | None = None
+_drift = DriftDetector(window=10)
 
 
 @asynccontextmanager
@@ -53,8 +64,20 @@ def health() -> dict:
     return {"status": "ok", "model_loaded": _predictor is not None}
 
 
+@app.get("/drift", tags=["ops"])
+def drift() -> dict:
+    """Current NDVI drift status vs training baseline."""
+    z = _drift.zscore
+    return {
+        "ndvi_baseline_mean": 0.766,
+        "drift_zscore": round(z, 3),
+        "alert": abs(z) > 2.0,
+        "window": _drift.window,
+    }
+
+
 @app.post("/infer", response_model=InferResponse, tags=["inference"])
-def infer(req: InferRequest) -> InferResponse:
+def infer(req: InferRequest, background_tasks: BackgroundTasks) -> InferResponse:
     if _predictor is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
@@ -67,7 +90,7 @@ def infer(req: InferRequest) -> InferResponse:
             size=tuple(req.size),
             max_cloud_coverage=req.max_cloud_coverage,
         )
-        validate_prediction(result)  # pandera guard
+        validate_prediction(result)
     except pandera.errors.SchemaError as e:
         requests_total.labels(status="schema_error").inc()
         raise HTTPException(status_code=422, detail=f"Output schema violation: {e}")
@@ -80,6 +103,14 @@ def infer(req: InferRequest) -> InferResponse:
     requests_total.labels(status="ok").inc()
     health_score_gauge.set(result["health_score"])
     ndvi_mean_gauge.set(result["ndvi_stats"]["mean"])
+
+    # Drift update (in-process, cheap)
+    _drift.update(result["ndvi_stats"]["mean"])
+
+    # DB persistence (background, non-blocking)
+    background_tasks.add_task(
+        save_inference, result, req.bbox, req.date_from, req.date_to
+    )
 
     return InferResponse(**result)
 

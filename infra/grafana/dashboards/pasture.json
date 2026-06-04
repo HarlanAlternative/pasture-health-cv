@@ -3,43 +3,101 @@
   "uid": "pasture-health",
   "schemaVersion": 38,
   "refresh": "30s",
+  "time": {"from": "now-1h", "to": "now"},
   "panels": [
     {
-      "id": 1, "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
-      "title": "Inference Latency (p50 / p95)",
-      "type": "timeseries",
-      "targets": [
-        {"expr": "histogram_quantile(0.50, rate(pasture_infer_latency_seconds_bucket[5m]))", "legendFormat": "p50"},
-        {"expr": "histogram_quantile(0.95, rate(pasture_infer_latency_seconds_bucket[5m]))", "legendFormat": "p95"}
-      ]
-    },
-    {
-      "id": 2, "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
-      "title": "Requests / min",
-      "type": "timeseries",
-      "targets": [
-        {"expr": "rate(pasture_requests_total[1m]) * 60", "legendFormat": "{{status}}"}
-      ]
-    },
-    {
-      "id": 3, "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
-      "title": "Health Score (last inference)",
+      "id": 1,
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "title": "Pasture Health Score",
       "type": "gauge",
-      "fieldConfig": {"defaults": {"min": 0, "max": 100, "unit": "percent",
-        "thresholds": {"steps": [
-          {"color": "red", "value": 0},
-          {"color": "yellow", "value": 40},
-          {"color": "green", "value": 70}
-        ]}}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {
+        "defaults": {
+          "min": 0, "max": 100, "unit": "percent",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red",    "value": 0},
+            {"color": "yellow", "value": 40},
+            {"color": "green",  "value": 70}
+          ]}
+        }
+      },
       "targets": [{"expr": "pasture_health_score_last", "legendFormat": "Health Score"}]
     },
     {
-      "id": 4, "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
-      "title": "NDVI Mean (last inference)",
+      "id": 2,
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "title": "NDVI Drift Z-score",
+      "type": "gauge",
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {
+        "defaults": {
+          "min": -4, "max": 4, "unit": "none",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red",   "value": -4},
+            {"color": "green", "value": -2},
+            {"color": "green", "value": 2},
+            {"color": "red",   "value": 2}
+          ]}
+        }
+      },
+      "targets": [{"expr": "pasture_ndvi_drift_zscore", "legendFormat": "Drift Z-score"}]
+    },
+    {
+      "id": 3,
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "title": "Requests / min",
+      "type": "stat",
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "reqps", "decimals": 2}},
+      "targets": [{"expr": "rate(pasture_requests_total[1m]) * 60", "legendFormat": "req/min"}]
+    },
+    {
+      "id": 4,
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 8},
+      "title": "Health Score — time series",
       "type": "timeseries",
-      "fieldConfig": {"defaults": {"min": -1, "max": 1}},
-      "targets": [{"expr": "pasture_ndvi_mean_last", "legendFormat": "NDVI mean"}]
+      "fieldConfig": {
+        "defaults": {
+          "min": 0, "max": 100, "unit": "percent",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": 0},
+            {"color": "yellow", "value": 40},
+            {"color": "green", "value": 70}
+          ]}
+        }
+      },
+      "targets": [{"expr": "pasture_health_score_last", "legendFormat": "Health Score"}]
+    },
+    {
+      "id": 5,
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 8},
+      "title": "NDVI Rolling Mean + Drift Zone",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {"min": 0, "max": 1, "unit": "none"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Baseline"},
+           "properties": [{"id": "custom.lineStyle", "value": {"dash": [10, 10], "fill": "dash"}},
+                          {"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]}
+        ]
+      },
+      "targets": [
+        {"expr": "pasture_ndvi_rolling_mean", "legendFormat": "Rolling NDVI mean"},
+        {"expr": "0 * pasture_ndvi_rolling_mean + 0.766", "legendFormat": "Baseline (0.766)"}
+      ]
+    },
+    {
+      "id": 6,
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 17},
+      "title": "Inference Latency — p50 / p95",
+      "type": "timeseries",
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(pasture_infer_latency_seconds_bucket[5m]))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, rate(pasture_infer_latency_seconds_bucket[5m]))", "legendFormat": "p95"},
+        {"expr": "0 * histogram_quantile(0.95, rate(pasture_infer_latency_seconds_bucket[5m])) + 5", "legendFormat": "Alert threshold (5 s)"}
+      ]
     }
-  ],
-  "time": {"from": "now-1h", "to": "now"}
+  ]
 }
