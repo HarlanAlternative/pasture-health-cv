@@ -17,6 +17,33 @@ import numpy as np
 
 _DEFAULT_HISTORY = Path(__file__).resolve().parents[3] / "data" / "historical_ndvi.json"
 
+# AOI bounding-box centres (lon, lat) for nearest-AOI matching
+_AOI_CENTRES: dict[str, tuple[float, float]] = {
+    "waikato"    : (175.45, -37.85),
+    "canterbury" : (171.75, -43.55),
+    "hawkes_bay" : (176.85, -39.55),
+    "marlborough": (173.95, -41.55),
+}
+
+_MONTH_TO_QUARTER = {m: f"Q{(m-1)//3+1}" for m in range(1, 13)}
+
+
+def detect_aoi(bbox: tuple | list) -> str:
+    """Return the name of the nearest known AOI to the given bbox centre."""
+    lon_c = (bbox[0] + bbox[2]) / 2
+    lat_c = (bbox[1] + bbox[3]) / 2
+    return min(
+        _AOI_CENTRES,
+        key=lambda a: ((_AOI_CENTRES[a][0] - lon_c) ** 2
+                       + (_AOI_CENTRES[a][1] - lat_c) ** 2),
+    )
+
+
+def detect_quarter(date_str: str) -> str:
+    """Return 'Q1'–'Q4' for an ISO date string like '2024-07-15'."""
+    month = int(date_str[5:7])
+    return _MONTH_TO_QUARTER[month]
+
 
 class SeasonalBaseline:
     """Per-AOI, per-quarter NDVI climatology."""

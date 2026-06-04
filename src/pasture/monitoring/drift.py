@@ -1,33 +1,37 @@
 """
-NDVI distribution drift detector.
+NDVI drift detector — seasonal-aware.
 
-Compares a rolling window of recent inference NDVI means against a baseline
-computed from the training tiles (Waikato + Canterbury 2024 summer).
-Emits a Prometheus gauge so Prometheus alerting rules can fire.
+Primary mode (when historical_ndvi.json exists):
+    Z-score = (observed_ndvi - seasonal_mean[aoi][quarter]) / seasonal_std[aoi][quarter]
+    Avoids false alerts from normal seasonal swings.
 
-## Assumptions
-- Baseline: mean=0.766, std=0.202 (from prepare_data.py training tiles)
-- Window: last 10 inferences (configurable)
-- Z-score > 2 or < -2 → meaningful drift
-- Thread-safe via a simple lock (single-worker uvicorn)
+Fallback mode (no historical data):
+    Z-score = (rolling_mean - NDVI_BASELINE_MEAN) / NDVI_BASELINE_STD
+    Same behaviour as before.
+
+Emits two Prometheus gauges:
+    pasture_ndvi_drift_zscore   — current Z-score (seasonal or rolling)
+    pasture_ndvi_rolling_mean   — rolling mean of recent observations
 """
 
 from __future__ import annotations
 
+import logging
 import threading
 
 import numpy as np
 from prometheus_client import Gauge
 
-# Sentinel-2 NDVI baseline from NZ training data (Waikato + Canterbury, 2024)
-NDVI_BASELINE_MEAN = 0.766
-NDVI_BASELINE_STD  = 0.202
+log = logging.getLogger(__name__)
+
+# Fallback constants (Waikato summer annual mean)
+_FALLBACK_MEAN = 0.766
+_FALLBACK_STD  = 0.202
 
 ndvi_drift_zscore = Gauge(
     "pasture_ndvi_drift_zscore",
-    "Z-score of rolling NDVI mean vs training baseline (|z|>2 → drift alert)",
+    "Z-score of NDVI vs seasonal baseline (|z|>2 → drift alert)",
 )
-
 ndvi_rolling_mean = Gauge(
     "pasture_ndvi_rolling_mean",
     "Rolling mean of NDVI across recent inferences",
@@ -35,32 +39,65 @@ ndvi_rolling_mean = Gauge(
 
 
 class DriftDetector:
-    """Rolling-window NDVI drift detector."""
+    """Seasonal-aware NDVI drift detector with rolling-mean fallback."""
 
     def __init__(self, window: int = 10) -> None:
         self.window = window
         self._values: list[float] = []
         self._lock = threading.Lock()
 
-    def update(self, ndvi_mean: float) -> float:
-        """Record a new NDVI mean and return the current drift Z-score."""
+        # Try to load seasonal baseline; silent fallback if not available
+        try:
+            from pasture.monitoring.seasonal import SeasonalBaseline
+            self._baseline = SeasonalBaseline()
+            log.info("DriftDetector: seasonal baseline loaded (%s AOIs)",
+                     len(self._baseline.aois))
+        except FileNotFoundError:
+            self._baseline = None
+            log.info("DriftDetector: no historical_ndvi.json found, using rolling fallback")
+
+    def update(
+        self,
+        ndvi_mean: float,
+        bbox: tuple | list | None = None,
+        date_from: str | None = None,
+    ) -> float:
+        """Record a new NDVI observation and return the current Z-score."""
         with self._lock:
             self._values.append(ndvi_mean)
             if len(self._values) > self.window:
                 self._values.pop(0)
-            zscore = self._compute_zscore()
+            rolling = float(np.mean(self._values))
 
+        zscore = self._seasonal_zscore(ndvi_mean, bbox, date_from)
         ndvi_drift_zscore.set(zscore)
-        ndvi_rolling_mean.set(float(np.mean(self._values)))
+        ndvi_rolling_mean.set(rolling)
         return zscore
 
-    def _compute_zscore(self) -> float:
-        if len(self._values) < 3:
-            return 0.0
-        mu = float(np.mean(self._values))
-        return (mu - NDVI_BASELINE_MEAN) / (NDVI_BASELINE_STD + 1e-8)
+    def _seasonal_zscore(
+        self,
+        ndvi_mean: float,
+        bbox: tuple | list | None,
+        date_from: str | None,
+    ) -> float:
+        if self._baseline and bbox is not None and date_from is not None:
+            try:
+                from pasture.monitoring.seasonal import detect_aoi, detect_quarter
+                aoi     = detect_aoi(bbox)
+                quarter = detect_quarter(date_from)
+                z = self._baseline.zscore(aoi, quarter, ndvi_mean)
+                if z is not None:
+                    return round(z, 3)
+            except Exception as exc:
+                log.warning("Seasonal Z-score failed, using fallback: %s", exc)
+
+        # Fallback: rolling mean vs fixed annual baseline
+        with self._lock:
+            if len(self._values) < 3:
+                return 0.0
+            rolling = float(np.mean(self._values))
+        return round((rolling - _FALLBACK_MEAN) / _FALLBACK_STD, 3)
 
     @property
     def zscore(self) -> float:
-        with self._lock:
-            return self._compute_zscore()
+        return float(ndvi_drift_zscore._value.get())

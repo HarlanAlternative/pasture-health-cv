@@ -121,8 +121,12 @@ def infer(req: InferRequest, background_tasks: BackgroundTasks) -> InferResponse
     health_score_gauge.set(result["health_score"])
     ndvi_mean_gauge.set(result["ndvi_stats"]["mean"])
 
-    # Drift update (in-process, cheap)
-    _drift.update(result["ndvi_stats"]["mean"])
+    # Drift update — seasonal Z-score if baseline available, rolling fallback otherwise
+    _drift.update(
+        result["ndvi_stats"]["mean"],
+        bbox=req.bbox,
+        date_from=req.date_from,
+    )
 
     # DB persistence (background, non-blocking)
     background_tasks.add_task(
