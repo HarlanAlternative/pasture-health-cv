@@ -29,6 +29,7 @@ from pasture.api.db import save_inference
 from pasture.api.schemas import InferRequest, InferResponse, validate_prediction
 from pasture.inference.predictor import Predictor
 from pasture.monitoring.drift import DriftDetector
+from pasture.monitoring.forecast import forecast_ndvi
 from pasture.monitoring.metrics import (
     health_score_gauge,
     infer_latency,
@@ -74,6 +75,22 @@ def drift() -> dict:
         "alert": abs(z) > 2.0,
         "window": _drift.window,
     }
+
+
+@app.get("/forecast", tags=["analytics"])
+def forecast(aoi: str = "waikato", quarters: int = 4) -> dict:
+    """Prophet NDVI forecast for the next N quarters.
+
+    Args:
+        aoi: waikato | canterbury | hawkes_bay | marlborough
+        quarters: number of future quarters to predict (default 4)
+    """
+    try:
+        return forecast_ndvi(aoi=aoi, quarters_ahead=quarters)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/infer", response_model=InferResponse, tags=["inference"])

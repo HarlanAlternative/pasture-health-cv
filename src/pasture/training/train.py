@@ -34,6 +34,11 @@ except ImportError:
 
 LABEL_NAMES = {1: "healthy", 2: "stressed", 3: "bare", 4: "water"}
 
+# Inverse-frequency class weights derived from 4-AOI training distribution:
+#   healthy 59.4%  stressed 15.1%  bare 1.6%  water 6.7%
+# Weights = median_freq / class_freq, capped at 15, normalised so healthy=1.0
+CLASS_WEIGHTS = torch.tensor([0.0, 1.0, 4.0, 15.0, 8.0], dtype=torch.float32)
+
 
 def _dice_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     if _HAS_SMP_DICE:
@@ -116,7 +121,9 @@ def train(
     print(f"Model: {arch}/{encoder or 'default'}  Params: {n_params/1e6:.1f}M")
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    ce_criterion = nn.CrossEntropyLoss(ignore_index=0)
+    ce_criterion = nn.CrossEntropyLoss(
+        weight=CLASS_WEIGHTS.to(device), ignore_index=0
+    )
 
     Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
     best_miou  = 0.0
@@ -130,6 +137,7 @@ def train(
             "arch": arch, "encoder": encoder, "epochs": epochs,
             "batch_size": batch_size, "lr": lr, "num_classes": num_classes,
             "params_M": round(n_params / 1e6, 2),
+            "class_weights": CLASS_WEIGHTS.tolist(),
             "train_patches": len(train_ds), "val_patches": len(val_ds),
         })
 

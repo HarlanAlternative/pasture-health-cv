@@ -32,27 +32,42 @@ PATCH_DIR    = PROJECT_ROOT / "data" / "patches"
 SENTINEL_CACHE = str(PROJECT_ROOT / "data" / "sentinel_cache")
 LRIS_CACHE     = str(PROJECT_ROOT / "data" / "lris_cache")
 
+# New AOIs: drier regions with more seasonal stress variation
+# Hawke's Bay: Heretaunga Plains — drought-prone, depleted grassland common
+HAWKES_BAY_BBOX   = (176.60, -39.80, 177.10, -39.30)
+# Marlborough: East Coast, dry continental — more bare/sparse in summer
+MARLBOROUGH_BBOX  = (173.70, -41.80, 174.20, -41.30)
+
 TILES = [
-    # name              bbox              time_interval                   maxcc  split
-    ("waikato_q1",    WAIKATO_BBOX,    ("2024-01-01", "2024-03-31"),   20,   "train"),
-    ("waikato_q2",    WAIKATO_BBOX,    ("2024-04-01", "2024-06-30"),   30,   "train"),
-    ("waikato_q3",    WAIKATO_BBOX,    ("2024-07-01", "2024-09-30"),   50,   "train"),
-    ("waikato_q4",    WAIKATO_BBOX,    ("2024-10-01", "2024-12-31"),   30,   "val"),
-    ("canterbury_q1", CANTERBURY_BBOX, ("2024-01-01", "2024-03-31"),   20,   "train"),
-    ("canterbury_q2", CANTERBURY_BBOX, ("2024-04-01", "2024-06-30"),   30,   "train"),
-    ("canterbury_q3", CANTERBURY_BBOX, ("2024-07-01", "2024-09-30"),   50,   "train"),
-    ("canterbury_q4", CANTERBURY_BBOX, ("2024-10-01", "2024-12-31"),   30,   "val"),
+    # ── Original AOIs ──────────────────────────────────────────────────────────
+    ("waikato_q1",      WAIKATO_BBOX,      ("2024-01-01", "2024-03-31"), 20, "train"),
+    ("waikato_q2",      WAIKATO_BBOX,      ("2024-04-01", "2024-06-30"), 30, "train"),
+    ("waikato_q3",      WAIKATO_BBOX,      ("2024-07-01", "2024-09-30"), 50, "train"),
+    ("waikato_q4",      WAIKATO_BBOX,      ("2024-10-01", "2024-12-31"), 30, "val"),
+    ("canterbury_q1",   CANTERBURY_BBOX,   ("2024-01-01", "2024-03-31"), 20, "train"),
+    ("canterbury_q2",   CANTERBURY_BBOX,   ("2024-04-01", "2024-06-30"), 30, "train"),
+    ("canterbury_q3",   CANTERBURY_BBOX,   ("2024-07-01", "2024-09-30"), 50, "train"),
+    ("canterbury_q4",   CANTERBURY_BBOX,   ("2024-10-01", "2024-12-31"), 30, "val"),
+    # ── New AOIs: drier regions for stressed/bare class diversity ───────────────
+    ("hawkesbay_q1",    HAWKES_BAY_BBOX,   ("2024-01-01", "2024-03-31"), 20, "train"),
+    ("hawkesbay_q2",    HAWKES_BAY_BBOX,   ("2024-04-01", "2024-06-30"), 30, "train"),
+    ("hawkesbay_q3",    HAWKES_BAY_BBOX,   ("2024-07-01", "2024-09-30"), 50, "train"),
+    ("hawkesbay_q4",    HAWKES_BAY_BBOX,   ("2024-10-01", "2024-12-31"), 30, "val"),
+    ("marlborough_q1",  MARLBOROUGH_BBOX,  ("2024-01-01", "2024-03-31"), 20, "train"),
+    ("marlborough_q2",  MARLBOROUGH_BBOX,  ("2024-04-01", "2024-06-30"), 30, "train"),
+    ("marlborough_q3",  MARLBOROUGH_BBOX,  ("2024-07-01", "2024-09-30"), 50, "train"),
+    ("marlborough_q4",  MARLBOROUGH_BBOX,  ("2024-10-01", "2024-12-31"), 30, "val"),
 ]
 
 
 def main() -> None:
     total_train = total_val = 0
 
-    # Pre-fetch LCDB for both AOIs (cached after first download)
+    # Pre-fetch LCDB for all AOIs (cached after first download)
     print("=== Fetching LCDB land-cover polygons ===")
-    lcdb_waikato    = get_lcdb(WAIKATO_BBOX,    cache_dir=LRIS_CACHE)
-    lcdb_canterbury = get_lcdb(CANTERBURY_BBOX, cache_dir=LRIS_CACHE)
-    lcdb_map = {WAIKATO_BBOX: lcdb_waikato, CANTERBURY_BBOX: lcdb_canterbury}
+    lcdb_map = {}
+    for bbox in [WAIKATO_BBOX, CANTERBURY_BBOX, HAWKES_BAY_BBOX, MARLBOROUGH_BBOX]:
+        lcdb_map[bbox] = get_lcdb(bbox, cache_dir=LRIS_CACHE)
     print()
 
     for name, bbox, time_interval, maxcc, split in TILES:
